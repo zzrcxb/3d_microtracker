@@ -3,6 +3,6 @@
 using namespace std;
 
 int main() {
-    startsocketclient("127.0.0.1", "27015");
+    startlocalserver("27015", 512);
     return 0;
 }

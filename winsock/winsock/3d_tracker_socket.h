@@ -1,6 +1,6 @@
 #pragma once
 #include <string>
 
-int startlocalserver(std::string port, int recvbuflen);
+int startlocalserver(char* port, int recvbuflen);
 
-void startsocketclient(std::string ipv4, std::string port, std::string message);
+int startsocketclient(char* ipv4, char* port);
