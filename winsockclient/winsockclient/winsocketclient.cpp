@@ -152,7 +152,7 @@ int startsocketclient(char* ipv4, char* port) {
         &dwThreadId
     );
 
-    cout << "Here 4" << endl;
+    // cout << "Here 4" << endl;
 
     if (ghThreads_c == NULL) {
         cerr << "[Error]Cannot start a new thread" << endl;

@@ -11,7 +11,7 @@ CRITICAL_SECTION shared_buffer_lock;
 HANDLE ghThreads_c;
 
 int main() {
-    string buffer("HELLO");
+    string buffer("4 3.44");
     string buffer2("DISCONNECT");
 
     cout << "here 0" << endl;
@@ -32,9 +32,9 @@ int main() {
     shared_buffer[buffer.size()] = 0;
     LeaveCriticalSection(&shared_buffer_lock);
     while (!recho); // Wait until finished.
-    
-    cout << "Here 3" << endl;
+    recho = false;
     Sleep(10);
+    cout << "Here 3" << endl;
     EnterCriticalSection(&shared_buffer_lock);
     renable = true;
     for (int i = 0; i < buffer2.size(); i++)
