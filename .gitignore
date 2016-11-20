@@ -104,5 +104,6 @@ config.py
 *.sln
 *.pdb
 *.exe
+.idb
 #documentation
 *.pdf
