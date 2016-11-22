@@ -29,7 +29,7 @@ public:
     SOCKET ListenSocket;
 
     // Server state:
-    bool *error, *ready;
+    bool error, ready;
 
     // Server property:
     char* port;
@@ -37,13 +37,13 @@ public:
     char split;
     
     //Receive data
-    resdata* rdata;
-    int* recvsize;
+    resdata rdata;
+    int recvsize;
 
     //Muiltithreads
     CRITICAL_SECTION shared_buffer_lock;
     HANDLE ghThreads_s;
-    bool* wecho, *isclosed;
+    bool wecho;
 
 
     WinSockServer() {}
@@ -55,35 +55,22 @@ public:
         this->port = new char[strlen(port) + 1];
         strcpy_s(this->port, strlen(port) + 1, port);
 
-        this->rdata = new resdata;
-
-        wecho = new bool;
-        isclosed = new bool;
-        error = new bool;
-        ready = new bool;
-
-        *wecho = false;
-        *isclosed = false;
-        *error = false;
-        *ready = false;
+        wecho = false;
+        error = false;
+        ready = false;
 
         this->recvbuflen = recvbuflen;
         this->split = split;
-        this->recvsize = new int;
+        recvsize = 0;
 
         startlocalserver();
     }
 
     ~WinSockServer() {
-        delete[] this->port;
-        delete rdata;
-        delete wecho;
-        delete isclosed;
-        delete recvsize;
-        delete error;
-        delete ready;
-
         WaitForSingleObject(ghThreads_s, INFINITE);
+
+        delete[] this->port;
+
         DeleteCriticalSection(&shared_buffer_lock);
     }
 
@@ -97,5 +84,3 @@ int charChanger(double num, char* &res);
 int intChanger(const char* str, int &res);
 int split2double(const char* str, std::vector<double> &data, char ch);
 int receive(WinSockServer* winsock_s);
-SOCKET startup();
-int recv2(SOCKET ListenSocket);

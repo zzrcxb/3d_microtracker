@@ -14,27 +14,17 @@
 
 using namespace std;
 
-
-DWORD WINAPI ThreadProcClient(void* lpParam) {
-    WinSockClient* winsock_c = (WinSockClient*)lpParam;
-    char *ipv4 = winsock_c->ipv4, *port = winsock_c->port;
-    bool* renable = winsock_c->renable, *recho = winsock_c->recho;
-    bool* error = winsock_c->error, *ready = winsock_c->ready;
-    CRITICAL_SECTION &shared_buffer_lock = winsock_c->shared_buffer_lock;
-    char* shared_buffer = winsock_c->shared_buffer;
-
-    const string EXIT_FLAG = "DISCONNECT";
+int WinSockClient::startsocketclient() {
     WSADATA wsaData;
     int err;
-    struct addrinfo *result = NULL, *ptr = NULL, hints;
+    struct addrinfo *result = NULL, hints;
     SOCKET ConnectSocket = INVALID_SOCKET;
     string sendflag;
 
     // WSAStartup
     if ((err = WSAStartup(MAKEWORD(2, 2), &wsaData))) {
         cerr << "[Error]WSAStartup failed. Error code:" << err << endl;
-        *error = true;
-        *ready = true;
+        error = true;
         return -1;
     }
     else {
@@ -50,8 +40,7 @@ DWORD WINAPI ThreadProcClient(void* lpParam) {
     if ((err = getaddrinfo(ipv4, port, &hints, &result))) {
         cerr << "[Error]getaddrinfo failed. Error code:" << err << endl;
         WSACleanup();
-        *error = true;
-        *ready = true;
+        error = true;
         return -1;
     }
     else {
@@ -60,123 +49,133 @@ DWORD WINAPI ThreadProcClient(void* lpParam) {
 
     // Creating a socket
     ptr = result;
-    ConnectSocket = socket(ptr->ai_family, ptr->ai_socktype, ptr->ai_protocol);
-    if (ConnectSocket == INVALID_SOCKET) {
-        cerr << "[Error]socket() error. Error code:" << WSAGetLastError() << endl;
-        freeaddrinfo(result);
-        WSACleanup();
-        *error = true;
-        *ready = true;
-        return -1;
-    }
-    else {
-        cout << "[Info]Client socket created!" << endl;
-    }
-
-    //Connecting to socket
-    if (connect(ConnectSocket, ptr->ai_addr, (int)ptr->ai_addrlen) == SOCKET_ERROR) {
-        cerr << "[Error]connect() error. Error code:" << WSAGetLastError() << endl;
-        closesocket(ConnectSocket);
-        freeaddrinfo(result);
-        WSACleanup();
-        *error = true;
-        *ready = true;
-        return -1;
-    }
-    else {
-        cout << "[Info]Socket connected" << endl;
-    }
-
-    *ready = true;
-
-    while (1) {
-        char echo[10] = { 0 };
-        
-        while(*renable) {
-            EnterCriticalSection(&shared_buffer_lock);
-
-            *renable = false;
-            sendflag = string(shared_buffer);
-
-            if (send(ConnectSocket, shared_buffer, (int)strlen(shared_buffer), 0) == SOCKET_ERROR) {
-                cerr << "[Error]send() failed. Error code:" << WSAGetLastError() << endl;
-                closesocket(ConnectSocket);
-                WSACleanup();
-                *error = true;
-                return -1;
-            }
-            else {
-                cout << "[Info]Data sent, " << shared_buffer << endl;
-            }
-
-            do {
-                if (recv(ConnectSocket, echo, 3, 0) > 0) {
-                    if (strcmp(echo, "ACK") == 0) {
-                        cout << "[Info]Server accepted" << endl;
-                        break;
-                    }
-                }
-                else {
-                    cerr << "[Error]Cannot get reply from server." << endl;
-                    break;
-                }
-            } while (1);
-
-            *recho = true;  
-            LeaveCriticalSection(&shared_buffer_lock);
-        }
-
-        if (!sendflag.compare(EXIT_FLAG))
-            break;
-
-        Sleep(1);
-    }
-
-    closesocket(ConnectSocket);
-    WSACleanup();
-
     return 0;
 }
 
 
-int WinSockClient::startsocketclient() {
+int sendmessage(WinSockClient* winsock_c) {
+    char *ipv4 = winsock_c->ipv4, *port = winsock_c->port;
+    bool &error = winsock_c->error, &ready = winsock_c->ready;
+    char* msg = winsock_c->msg;
+
+    char echo[32] = { 0 };
+    struct addrinfo *ptr = winsock_c->ptr;
+
+    CRITICAL_SECTION &shared_buffer_lock = winsock_c->shared_buffer_lock;
+    SOCKET ConnectSocket;
+    int err;
+
+    while (1) {
+        ConnectSocket = socket(ptr->ai_family, ptr->ai_socktype, ptr->ai_protocol);
+        if (ConnectSocket == INVALID_SOCKET) {
+            cerr << "[Error]socket() error. Error code:" << WSAGetLastError() << endl;
+            WSACleanup();
+            error = true;
+            return -1;
+        }
+        else {
+            cout << "[Info]Client socket created!" << endl;
+        }
+
+        //Connecting to socket
+        if (connect(ConnectSocket, ptr->ai_addr, (int)ptr->ai_addrlen) == SOCKET_ERROR) {
+            cerr << "[Error]connect() error. Error code:" << WSAGetLastError() << endl;
+            closesocket(ConnectSocket);
+            WSACleanup();
+            error = true;
+            return -1;
+        }
+        else {
+            cout << "[Info]Socket connected" << endl;
+        }
+
+        ready = true;
+
+        if (send(ConnectSocket, msg, (int)strlen(msg), 0) == SOCKET_ERROR) {
+            cerr << "[Error]send() failed. Error code:" << WSAGetLastError() << endl;
+            closesocket(ConnectSocket);
+            WSACleanup();
+            error = true;
+            return -1;
+        }
+        else {
+            cout << "[Info]Data sent, " << msg << endl;
+        }
+
+        if (shutdown(ConnectSocket, SD_SEND) == SOCKET_ERROR) {
+            cout << "[Error]Shutdown failed with error. Error code:" << WSAGetLastError() << endl;
+            closesocket(ConnectSocket);
+            WSACleanup();
+            error = true;
+            return -1;
+        }
+
+        do {
+            if ((err = recv(ConnectSocket, echo, 32, 0)) > 0) {
+                echo[err] = '\0';
+                cout << "[Info]Server replied " << echo << endl;
+            }
+            else if (err == 0) {
+                cout << "[Info]Closed" << endl;
+            }
+            else {
+                cerr << "[Error]Cannot get reply from server." << endl;
+                break;
+            }
+        } while (err > 0);
+
+        if (strcmp(echo, "ACK") == 0) {
+            cout << "[Info]Server accepted" << endl;
+            break;
+        }
+    }
+
+    closesocket(ConnectSocket);
+    return 0;
+}
+
+DWORD WINAPI ThreadProcSend(void* lpPara) {
+    WinSockClient* winsock_c = (WinSockClient*)lpPara;
+    sendmessage(winsock_c);
+    return 0;
+}
+
+int WinSockClient::send(char* bufstr) {
     DWORD dwThreadId;
- 
+    int len = strlen(bufstr);
+    if (len >= sendbuflen)
+        return -3;
+
+    strcpy_s(msg, len + 1, bufstr);
+
     ghThreads_c = CreateThread(
         0,
         0,
-        ThreadProcClient,
+        ThreadProcSend,
         this,
         0,
         &dwThreadId
     );
 
-    while (!*ready);
-
     if (ghThreads_c == NULL) {
-        cerr << "[Error]Cannot start a new thread" << endl;
+        cerr << "[Error]Cannot start a new thread to receive data" << endl;
+        error = true;
         return -2;
     }
-    else
-        return 0;
+    else {
+        while (1) {
+            if (error) {
+                return -1;
+            }
+            if (ready) {
+                return 0;
+            }
+            Sleep(5);
+        }
+    }
 }
-
-
-int WinSockClient::sendmessage(char* bufstr) {
-    EnterCriticalSection(&shared_buffer_lock);
-    strcpy_s(shared_buffer, strlen(bufstr) + 1, bufstr);
-    LeaveCriticalSection(&shared_buffer_lock);
-
-    *renable = true;
-    while (!*recho);
-    *recho = false;
-    return 0;
-}
-
 
 int WinSockClient::stopsocketclient() {
-    WaitForSingleObject(ghThreads_c, 5000);
-
+    WSACleanup();
     return 0;
 }
-
