@@ -4,47 +4,20 @@
 
 using namespace std;
 
-bool renable;
-bool recho;
-char shared_buffer[512] = {0};
-CRITICAL_SECTION shared_buffer_lock;
-HANDLE ghThreads_c;
 
 int main() {
-    string buffer("4 3.44");
-    string buffer2("DISCONNECT");
-
-    cout << "here 0" << endl;
-
-    InitializeCriticalSection(&shared_buffer_lock);
-    recho = false;
+    WinSockClient winsockclient("27015", "127.0.0.1", 512);
     
-    cout << "here 1" << endl;
+    winsockclient.startsocketclient();
 
-    startsocketclient("127.0.0.1", "27015");
 
-    cout << "here 2" << endl;
+    if (!*winsockclient.error) {
+        winsockclient.sendmessage("12.934 890");
+        winsockclient.sendmessage("4");
+        winsockclient.sendmessage("DISCONNECT");
 
-    EnterCriticalSection(&shared_buffer_lock);
-    renable = true;
-    for (int i = 0; i < buffer.size(); i++)
-        shared_buffer[i] = buffer[i];
-    shared_buffer[buffer.size()] = 0;
-    LeaveCriticalSection(&shared_buffer_lock);
-    while (!recho); // Wait until finished.
-    recho = false;
-    Sleep(10);
-    cout << "Here 3" << endl;
-    EnterCriticalSection(&shared_buffer_lock);
-    renable = true;
-    for (int i = 0; i < buffer2.size(); i++)
-        shared_buffer[i] = buffer2[i];
-    shared_buffer[buffer2.size()] = 0;
-    LeaveCriticalSection(&shared_buffer_lock);
-    
+        winsockclient.stopsocketclient();
+    }
 
-    WaitForSingleObject(ghThreads_c, INFINITE);
-
-    DeleteCriticalSection(&shared_buffer_lock);
     return 0;
 }

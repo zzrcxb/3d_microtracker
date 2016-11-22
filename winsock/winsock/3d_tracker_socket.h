@@ -1,33 +1,101 @@
 #pragma once
-#include <windows.h>
-#include <vector>
-#include <string>
-#define FAIL -1
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
 
-typedef struct network {
-    char* port, *ipv4;
-    int recvbuflen;
-} NetPara;
+#include <windows.h>
+#include <winsock2.h>
+#include <ws2tcpip.h>
+#include <iphlpapi.h>
+#include <vector>
+
+#pragma comment(lib, "Ws2_32.lib")
+
+#define FAIL -1
+#define EXIT_FLAG "DISCONNECT"
+#define ACPT_FLAG "ACK"
+#define LOSE_FLAG "CLOSED"
+#define DEFAULT_BUFLEN 512
+
 
 typedef struct resdata {
     double dx, dy, dz;
 } resdata;
 
-int startlocalserver(char* port, int recvbuflen);
 
-int startsocketclient(char* ipv4, char* port);
+class WinSockServer {
+public:
+    //Server shared variable
+    SOCKET ListenSocket;
 
-extern bool renable;
-extern bool recho;
-extern bool wenable;
-extern bool wecho;
-extern char shared_buffer[512];
-extern CRITICAL_SECTION shared_buffer_lock;
-extern HANDLE ghThreads_c;
-extern HANDLE ghThreads_s;
-extern resdata rdata;
+    // Server state:
+    bool *error, *ready;
+
+    // Server property:
+    char* port;
+    int recvbuflen;
+    char split;
+    
+    //Receive data
+    resdata* rdata;
+    int* recvsize;
+
+    //Muiltithreads
+    CRITICAL_SECTION shared_buffer_lock;
+    HANDLE ghThreads_s;
+    bool* wecho, *isclosed;
+
+
+    WinSockServer() {}
+    WinSockServer(char* port, int recvbuflen, char split) {
+        InitializeCriticalSection(&shared_buffer_lock);
+
+        ListenSocket = INVALID_SOCKET;
+
+        this->port = new char[strlen(port) + 1];
+        strcpy_s(this->port, strlen(port) + 1, port);
+
+        this->rdata = new resdata;
+
+        wecho = new bool;
+        isclosed = new bool;
+        error = new bool;
+        ready = new bool;
+
+        *wecho = false;
+        *isclosed = false;
+        *error = false;
+        *ready = false;
+
+        this->recvbuflen = recvbuflen;
+        this->split = split;
+        this->recvsize = new int;
+
+        startlocalserver();
+    }
+
+    ~WinSockServer() {
+        delete[] this->port;
+        delete rdata;
+        delete wecho;
+        delete isclosed;
+        delete recvsize;
+        delete error;
+        delete ready;
+
+        WaitForSingleObject(ghThreads_s, INFINITE);
+        DeleteCriticalSection(&shared_buffer_lock);
+    }
+
+    int startlocalserver();
+    int recv();
+};
+
 
 int fChanger(const char* str, double &res);
 int charChanger(double num, char* &res);
 int intChanger(const char* str, int &res);
 int split2double(const char* str, std::vector<double> &data, char ch);
+int receive(WinSockServer* winsock_s);
+SOCKET startup();
+int recv2(SOCKET ListenSocket);

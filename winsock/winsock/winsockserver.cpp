@@ -1,44 +1,19 @@
-#ifndef WIN32_LEAN_AND_MEAN
-#define WIN32_LEAN_AND_MEAN
-#endif
-
-#include <windows.h>
-#include <winsock2.h>
-#include <ws2tcpip.h>
-#include <iphlpapi.h>
-#include <stdio.h>
-#include <string>
-#include <iostream>
-#include <vector>
 #include "3d_tracker_socket.h"
-
-
-#pragma comment(lib, "Ws2_32.lib")
+#include <iostream>
+#include <string>
+#include <vector>
 
 using namespace std;
-const string EXIT_FLAG = "DISCONNECT";
 
-DWORD WINAPI ThreadProcServer(void* lpPara) {
-    NetPara *netpara = (NetPara*)lpPara;
+int WinSockServer::startlocalserver() {
     WSADATA wsaData;
     int err;
-    int recvbuflen = netpara->recvbuflen;
-    struct addrinfo *result = NULL, *ptr = NULL, hints;
-    SOCKET ListenSocket = INVALID_SOCKET;
-    SOCKET ClientSocket = INVALID_SOCKET;
-    const string EXIT_FLAG = "DISCONNECT";
-    char* recvbuf = new char[recvbuflen];
-    char* port;
-
-    port = new char[strlen(netpara->port) + 1];
-    strcpy_s(port, strlen(netpara->port) + 1, netpara->port);
-    //Initialize recvbuf
-    for (int i = 0; i < recvbuflen; i++)
-        recvbuf[i] = '\0';
+    struct addrinfo *result = NULL, hints;
 
     //WASStartup
     if ((err = WSAStartup(MAKEWORD(2, 2), &wsaData))) {
         cerr << "[Error]WSAStartup failed. Error code:" << err << endl;
+        *error = true;
         return -1;
     }
     else {
@@ -55,6 +30,7 @@ DWORD WINAPI ThreadProcServer(void* lpPara) {
     if ((err = getaddrinfo(NULL, port, &hints, &result))) {
         cerr << "[Error]getaddrinfo failed. Error code:" << err << endl;
         WSACleanup();
+        *error = true;
         return -1;
     }
     else {
@@ -67,6 +43,7 @@ DWORD WINAPI ThreadProcServer(void* lpPara) {
         cerr << "[Error]socket() error. Error code:" << WSAGetLastError() << endl;
         freeaddrinfo(result);
         WSACleanup();
+        *error = true;
         return -1;
     }
     else {
@@ -79,6 +56,7 @@ DWORD WINAPI ThreadProcServer(void* lpPara) {
         freeaddrinfo(result);
         closesocket(ListenSocket);
         WSACleanup();
+        *error = true;
         return -1;
     }
     else {
@@ -93,22 +71,49 @@ DWORD WINAPI ThreadProcServer(void* lpPara) {
         cerr << "[Error]listen() failed. Error code:" << WSAGetLastError() << endl;
         closesocket(ListenSocket);
         WSACleanup();
+        *error = true;
         return -1;
     }
     else {
         cout << "[Info]Listening on a socket." << endl;
     }
 
-    while (1) {
-        string recvstr;
-        vector<double>recvdata;
+    return 0;
+}
 
+DWORD WINAPI ThreadProcRecv(void* lpPara) {
+    WinSockServer* winsock_s = (WinSockServer*)lpPara;
+    receive(winsock_s);
+    return 0;
+}
+
+int receive(WinSockServer* winsock_s) {
+    int recvbuflen = winsock_s->recvbuflen;
+    char split = winsock_s->split;
+
+    CRITICAL_SECTION &shared_buffer_lock = winsock_s->shared_buffer_lock;
+    bool* wecho = winsock_s->wecho;
+    bool* error = winsock_s->error;
+    bool* ready = winsock_s->ready;
+    int* recvsize = winsock_s->recvsize;
+    resdata &rdata = *winsock_s->rdata;
+
+    SOCKET ClientSocket = INVALID_SOCKET;
+    SOCKET ListenSocket = winsock_s->ListenSocket;
+    char* recvbuf = new char[recvbuflen];
+    vector<double>recvdata;
+    int err;
+
+    while (1) {
         //Accepting a connection
+        cout << "[Info]Waiting for a connection" << endl;
+        *ready = true;
         ClientSocket = accept(ListenSocket, NULL, NULL);
         if (ClientSocket == INVALID_SOCKET) {
             cerr << "[Error]accept() failed. Error code:" << WSAGetLastError() << endl;
             closesocket(ListenSocket);
             WSACleanup();
+            *error = true;
             return -1;
         }
         else {
@@ -116,95 +121,118 @@ DWORD WINAPI ThreadProcServer(void* lpPara) {
         }
 
         do {
-            if ((err = recv(ClientSocket, recvbuf, recvbuflen, 0)) > 0) {
+            err = recv(ClientSocket, recvbuf, recvbuflen, 0);
+            recvbuf[err] = '\0';
+
+            if (err > 0) {
                 cout << "[Info]recieved: " << recvbuf << endl;
-                recvstr = string(recvbuf);
 
-                if (!recvstr.compare(EXIT_FLAG)) {
-                    cout << "[Info]Connection closed, bye" << endl;
-                    break;
-                }
-
-                recvdata.clear();
-
-                if (split2double(recvbuf, recvdata, ' ') == FAIL) {
-                    cerr << "[Error]Cannot convert string to double" << endl;
-                }
-
-                EnterCriticalSection(&shared_buffer_lock);
-                
-                if (recvdata.size() == 1) {
-                    rdata.dz = recvdata[0];
-                    cout << "[Info]Received z data, dz=" << recvdata[0] << endl;
-                }
-                else if (recvdata.size() == 2) {
-                    rdata.dx = recvdata[0];
-                    rdata.dy = recvdata[1];
-                    cout << "[Info]Received x-y data, dx=" << recvdata[0]
-                        << "  dy=" << recvdata[1] << endl;
+                if (send(ClientSocket, ACPT_FLAG, 3, 0) == SOCKET_ERROR) {
+                    cerr << "[Error]Cannot reply, error code:" << WSAGetLastError() << endl;
+                    closesocket(ClientSocket);
+                    WSACleanup();
+                    *error = true;
+                    return -1;
                 }
                 else {
-                    cerr << "[Error]Receive data error. size = " << recvdata.size() << endl;
+                    cout << "[Info]Replied \"ACK\"" << endl;
                 }
-                wecho = true;
 
-                LeaveCriticalSection(&shared_buffer_lock);
+                if (strcmp(recvbuf, EXIT_FLAG) == 0) {
+                    cout << "[Info]Shutting down, bye" << endl;
+                    err = 0;
+                }
+                else {
+                    recvdata.clear();
 
-                for (int i = 0; i < recvbuflen; i++)
-                    recvbuf[i] = '\0';
+                    if (split2double(recvbuf, recvdata, split) == FAIL) {
+                        cerr << "[Error]Cannot convert string to double" << endl;
+                    }
+                    EnterCriticalSection(&shared_buffer_lock);
+
+                    *recvsize = recvdata.size();
+                    if (*recvsize == 1) {
+                        rdata.dz = recvdata[0];
+                        cout << "[Info]Received z data, dz=" << recvdata[0] << endl;
+                    }
+                    else if (*recvsize == 2) {
+                        rdata.dx = recvdata[0];
+                        rdata.dy = recvdata[1];
+                        cout << "[Info]Received x-y data, dx=" << recvdata[0]
+                            << "  dy=" << recvdata[1] << endl;
+                    }
+                    else {
+                        cerr << "[Error]Receive data error. size = " << recvdata.size() << endl;
+                    }
+                }
             }
-            else if (err == 0 || !recvstr.compare(EXIT_FLAG)) {
-                cout << "[Info]Connection closed, bye" << endl;
+            else if (err == 0) {
+                cout << "[Info]Connection closed" << endl;
+                if (send(ClientSocket, ACPT_FLAG, 3, 0) == SOCKET_ERROR) {
+                    cerr << "[Error]Cannot reply, error code:" << WSAGetLastError() << endl;
+                    closesocket(ClientSocket);
+                    WSACleanup();
+                    *error = true;
+                    return -1;
+                }
+                else {
+                    cout << "[Info]Replied \"Closed\"\n" << endl;
+                }
+
+                if (shutdown(ClientSocket, SD_SEND) == SOCKET_ERROR) {
+                    cout << "[Error]Shutdown failed with error. Error code:" << WSAGetLastError() << endl;
+                    closesocket(ClientSocket);
+                    WSACleanup();
+                    *error = true;
+                    return -1;
+                }
             }
             else {
                 cerr << "[Error]recieve failed. Error code:" << WSAGetLastError() << endl;
                 closesocket(ListenSocket);
                 WSACleanup();
+                *error = true;
                 return -1;
             }
         } while (err > 0);
 
-        if (!recvstr.compare(EXIT_FLAG)) {
+        // *wecho = true;
+        if (strcmp(recvbuf, EXIT_FLAG) == 0) {
             break;
         }
     }
 
-    delete[] port;
-    delete[] netpara->port;
     delete[] recvbuf;
-    delete netpara;
-
     closesocket(ClientSocket);
     WSACleanup();
-
     return 0;
 }
 
-
-
-int startlocalserver(char* port, int recvbuflen=512) {
-    NetPara *netpara = new NetPara;
-    netpara->port = new char[strlen(port) + 1];
-    strcpy_s(netpara->port, strlen(port) + 1, port);
-    netpara->recvbuflen = recvbuflen;
-
+int WinSockServer::recv() {
     DWORD dwThreadId;
 
     ghThreads_s = CreateThread(
         0,
         0,
-        ThreadProcServer,
-        (void*)netpara,
+        ThreadProcRecv,
+        this,
         0,
         &dwThreadId
     );
 
-    cout << "Here 4" << endl;
-
     if (ghThreads_s == NULL) {
-        cerr << "[Error]Cannot start a new thread" << endl;
+        cerr << "[Error]Cannot start a new thread to receive data" << endl;
+        *error = true;
         return -2;
     }
-    else
-        return 0;
+    else {
+        while (1) {
+            if (*error) {
+                return -1;
+            }
+            if (*ready) {
+                return 0;
+            }
+        }
+    }
 }
