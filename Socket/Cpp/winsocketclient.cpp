@@ -1,16 +1,6 @@
-#ifndef WIN32_LEAN_AND_MEAN
-#define WIN32_LEAN_AND_MEAN
-#endif
-
-#include <windows.h>
-#include <winsock2.h>
-#include <ws2tcpip.h>
-#include <iphlpapi.h>
 #include <iostream>
 #include <string>
 #include "3d_tracker_socket.h"
-
-#pragma comment(lib, "Ws2_32.lib")
 
 using namespace std;
 
@@ -55,7 +45,7 @@ int WinSockClient::startsocketclient() {
 
 int sendmessage(WinSockClient* winsock_c) {
     char *ipv4 = winsock_c->ipv4, *port = winsock_c->port;
-    bool &error = winsock_c->error, &ready = winsock_c->ready;
+    bool &error = winsock_c->error, &ready = winsock_c->ready, &done = winsock_c->done;
     char* msg = winsock_c->msg;
 
     char echo[32] = { 0 };
@@ -129,8 +119,9 @@ int sendmessage(WinSockClient* winsock_c) {
             break;
         }
     }
-
+    
     closesocket(ConnectSocket);
+    done = true;
     return 0;
 }
 

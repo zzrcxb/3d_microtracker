@@ -97,6 +97,7 @@ int receive(WinSockServer* winsock_s) {
     bool &ready = winsock_s->ready;
     bool &wecho = winsock_s->wecho;
     int &recvsize = winsock_s->recvsize;
+    bool &isshutdown = winsock_s->isshutdown;
     resdata &rdata = winsock_s->rdata;
 
     SOCKET ClientSocket = INVALID_SOCKET;
@@ -211,8 +212,8 @@ int receive(WinSockServer* winsock_s) {
     delete[] recvbuf;
 
     closesocket(ClientSocket);
-
     WSACleanup();
+    isshutdown = true;
     return 0;
 }
 
