@@ -95,6 +95,7 @@ config.py
 #data
 *.dat
 *.txt
+*.pdf
 #pic
 *.png
 *.jpg
