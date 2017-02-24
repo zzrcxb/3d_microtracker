@@ -2,7 +2,7 @@
 This is a project aimed at controlling microscope to track a bacterium. It contains an image processing part and a controlling part. And there are several versions written in different language.
 Because of our platform's driver and library is only available on Windows, we only support Windows.
 
-# Screenshot
+# Screenshots
 ## 2D fixed
 ![](/results/fixed.png)
 ## Out of focus
